@@ -1,0 +1,49 @@
+upstream students_app_server {
+  # fail_timeout=0 : we always retry an upstream even if it failed
+  server unix:/webapps/students/run/gunicorn.sock fail_timeout=0;
+}
+
+server {
+
+    listen   80;
+    server_name students.vitaliypodoba.com;
+
+    client_max_body_size 4G;
+
+    access_log /webapps/students/logs/nginx-access.log;
+    error_log /webapps/students/logs/nginx-error.log;
+ 
+    location /static/ {
+        alias   /webapps/students/static/;
+    }
+    
+    location /media/ {
+        alias   /webapps/students/media/;
+    }
+
+    location / {
+        # why? : http://en.wikipedia.org/wiki/X-Forwarded-For
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # pass the Host: header from the client right along so redirects
+        # can be set properly within the Rack application
+        proxy_set_header Host $http_host;
+
+        # we don't want nginx trying to do something clever with
+        # redirects, we set the Host: header above already.
+        proxy_redirect off;
+
+        # Try to serve static files from nginx, no point in making an
+        # *application* server like GUnicorn serve static files.
+        if (!-f $request_filename) {
+            proxy_pass http://students_app_server;
+            break;
+        }
+    }
+
+    # Error pages
+    error_page 500 502 503 504 /500.html;
+    location = /500.html {
+        root /webapps/students/static/;
+    }
+}
